@@ -1,0 +1,5 @@
+# Picamera2/libcamera must be installed through apt on Raspberry Pi OS.
+ultralytics>=8.3.0,<9
+opencv-python>=4.8,<5
+# setup_pi.sh constrains this to the OS version for the Picamera2 ABI.
+numpy>=1.23,<3
