@@ -91,6 +91,14 @@ class ConfigAndStatusTests(unittest.TestCase):
             write_json(path, data)
             self.assertEqual(load_config(path), ([LEFT, RIGHT], (1280, 720)))
 
+    def test_optional_desk_polygon_round_trip(self):
+        seat = Seat(
+            "A01",
+            ((0, 0.5), (0.5, 0.5), (0.5, 1), (0, 1)),
+            ((0, 0), (0.5, 0), (0.5, 0.4), (0, 0.4)),
+        )
+        self.assertEqual(parse_config(config_document([seat], (1280, 720))), ([seat], (1280, 720)))
+
     def test_reject_malformed_polygons(self):
         for polygon in (
             [[0, 0], [1, 1]],

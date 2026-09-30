@@ -1,6 +1,8 @@
 # Open-source components
 
-- Ultralytics YOLO11n: COCO-pretrained object detector; this app filters the `person` class.
+- Ultralytics YOLO11n: COCO-pretrained object detector; the default runner filters
+  the `person` class. The optional operations detector also selects common COCO
+  belongings classes such as bags, books, laptops, phones, bottles, and cups.
   Code and pretrained weights: AGPL-3.0 / alternative Ultralytics commercial license.
   https://github.com/ultralytics/ultralytics
   https://docs.ultralytics.com/models/yolo11/

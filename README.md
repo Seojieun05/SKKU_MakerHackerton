@@ -4,9 +4,9 @@
 **YOLO11n**으로 좌석마다 사람이 있는지 확인합니다. 별도 학습이나 AI 가속기는
 필수가 아닙니다. 카메라 1대로 여러 좌석을 설정할 수 있습니다.
 
-이 버전의 `EMPTY`는 **사람이 검출되지 않음**을 뜻합니다. 짐만 놓인 자리도
-`EMPTY`가 됩니다. 물리적으로 완전히 빈자리인지, 예약 가능한 자리인지는
-판단하지 않습니다. 짐 구분과 예약 정보 연동은 아직 포함하지 않았습니다.
+기본 `run` 명령의 `EMPTY`는 **사람이 검출되지 않음**을 뜻합니다. 별도로 추가된
+운영 코어는 사람·짐·예약·체크인을 서로 다른 정보로 저장해 무예약 점유, 노쇼,
+장시간 자리 비움, 정리 요청을 구분합니다. 영상이나 얼굴 정보는 저장하지 않습니다.
 
 ## 빠른 시작
 
@@ -127,6 +127,31 @@ python -m seat_monitor run
 - CPU가 매우 느려 한 번의 추론이 `--max-gap-seconds`보다 오래 걸리면 확인 불가를 기록합니다.
 - 파일 입력에서는 분석 속도가 아닌 영상 시간으로 상태 전환 시간을 계산합니다.
 
+## 예약 웹 연동용 운영 코어
+
+`SeatMonitorCore`는 카메라 판정과 예약 상태를 섞지 않습니다. 예약만 하면
+`RESERVED_WAITING`, 체크인과 사람이 모두 확인되면 `IN_USE`, 예약 없이 사람이
+1분간 계속 감지되면 `UNRESERVED_OCCUPIED`가 됩니다. 예약 시작 후 15분간 체크인하지
+않으면 `NO_SHOW`, 사람 없이 같은 짐이 10분간 남으면 `AWAY_WITH_BELONGINGS`, 30분이면
+`CLEANUP_PENDING`입니다. 이 시간은 프레임 수가 아니라 실제 경과 시간으로 계산합니다.
+
+운영 메타데이터는 로컬 `seat_monitor.db`에 저장됩니다. SD 카드 쓰기 횟수를 줄이기
+위해 상태가 바뀔 때와 기본 60초 간격으로만 기록합니다. 웹 서버에서는 다음 메서드만
+연결하면 됩니다.
+
+`user_token`에는 학번이나 이름 대신 웹 로그인 세션에서 발급한 불투명 토큰을 넣으세요.
+카메라 판정에는 사용자 토큰이 들어가지 않으며 얼굴 인식도 하지 않습니다.
+
+- 카메라 입력: `feed_detections(...)` 또는 `feed_seat_status(...)`
+- 사용자 화면: `get_user_seat_map()`, `reserve_seat(...)`, `check_in_seat(...)`
+- 관리자 화면: `get_admin_dashboard()`, `request_cleanup(...)`, `resolve_cleanup(...)`
+
+기본 `PersonDetector`는 라즈베리파이 속도를 위해 사람만 검출합니다. 짐 구분까지 시험할
+때는 `detector.py`의 `SeatObjectDetector`를 사용합니다. COCO 사전 학습 클래스 중 가방,
+책, 노트북, 휴대전화, 병 등을 함께 검출하며, 현장 조명과 카메라 각도에서 정확도를
+반드시 확인해야 합니다. 좌석 설정 JSON에는 선택적으로 `desk_polygon`을 추가할 수
+있습니다. 없으면 기존 좌석 영역을 책상 영역으로도 사용합니다.
+
 ## 튜닝
 
 ```bash
@@ -185,8 +210,9 @@ AI 모델/카메라 설치 없이 상태 로직과 연결 처리를 검사할 �
 python -m unittest discover -s tests -v
 ```
 
-좌석 배정, 복도 제외, 겹친 좌석의 중복 배정 방지, 시간 누적, 프레임 중단, 설정 검증,
-카메라 시작 실패, 종료 시 상태 무효화를 검사합니다. GitHub Actions도 같은 검사를 실행합니다.
+좌석 배정, 복도 제외, 겹친 좌석의 중복 배정 방지, 실제 시간 누적, 예약/체크인 분리,
+알림 중복 방지, 재시작 복원, 설정 검증, 카메라 실패를 검사합니다. GitHub Actions도
+같은 검사를 실행합니다.
 실물 Pi/카메라의 처리 속도와 실제 열람실 정확도는 장비에서 별도로 확인해야 합니다.
 
 실제 모델의 선택적 검사(사람이 있는 로컬 사진 필요):
@@ -195,7 +221,7 @@ python -m unittest discover -s tests -v
 python -m tests.smoke_model --image /path/to/person.jpg
 ```
 
-2026-09-28 Windows/Python 3.11.9에서 자동 테스트 20개를 통과했습니다.
+2026-09-29 Windows/Python 3.11.9에서 자동 테스트 27개를 통과했습니다.
 Ultralytics 8.3.3, PyTorch 2.4.1, OpenCV 4.10.0, NumPy 1.26.4로 공식
 YOLO11n 모델을 로딩했고, Ultralytics 패키지의 `bus.jpg`에서 사람 4명,
 검은색 대조 프레임에서 0명을 탐지했습니다. 이 모델 검사 동안 소켓 연결을
@@ -210,8 +236,8 @@ Picamera2 실물 입력, 좌석 설정 GUI, NCNN 변환/ARM 실행은 아직 실
 ```text
 seat_monitor/
   camera.py       Picamera2 / USB / 로컬 영상 입력
-  detector.py     사전 학습 모델 준비와 사람 탐지
-  core.py         좌석 배정과 시간 누적
+  detector.py     사전 학습 모델 준비와 사람/선택적 짐 탐지
+  core.py         좌석 배정, 예약 대조, 시간 정책, SQLite 저장
   calibrate.py    마우스로 좌석 영역 설정
   config.py       좌표 검증
   status.py       상태 JSON

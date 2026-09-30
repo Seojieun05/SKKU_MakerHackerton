@@ -90,3 +90,49 @@ class PersonDetector:
         boxes = result.boxes.xyxyn.cpu().tolist()
         scores = result.boxes.conf.cpu().tolist()
         return [Detection(tuple(box), float(score)) for box, score in zip(boxes, scores)]
+
+
+class SeatObjectDetector(PersonDetector):
+    """Optional COCO detector for people and common desk belongings.
+
+    The default command-line runner intentionally keeps using PersonDetector
+    for speed. A web integration can use this detector when belongings states
+    are needed and the Pi's measured inference speed is acceptable.
+    """
+
+    DEFAULT_LABELS = (
+        "person", "backpack", "handbag", "suitcase", "bottle",
+        "cup", "book", "laptop", "cell phone",
+    )
+
+    def __init__(self, path: Path, confidence: float, imgsz: int, threads: int, labels=None):
+        super().__init__(path, confidence, imgsz, threads)
+        self.requested_labels = tuple(labels or self.DEFAULT_LABELS)
+        self.class_ids = None
+        self.class_names = None
+
+    def detect(self, frame) -> list[Detection]:
+        if self.class_ids is None:
+            with redirect_stdout(sys.stderr):
+                names = self.model.names
+            names = dict(names.items() if isinstance(names, dict) else enumerate(names))
+            self.class_names = names
+            wanted = set(self.requested_labels)
+            self.class_ids = [class_id for class_id, name in names.items() if name in wanted]
+            if not self.class_ids or "person" not in {names[i] for i in self.class_ids}:
+                raise ValueError("The selected model must contain the 'person' class.")
+        with redirect_stdout(sys.stderr):
+            result = self.model.predict(
+                source=frame, classes=self.class_ids, conf=self.confidence,
+                imgsz=self.imgsz, device="cpu", verbose=False, save=False,
+                save_txt=False, save_crop=False, show=False, rect=False,
+            )[0]
+        if result.boxes is None:
+            return []
+        boxes = result.boxes.xyxyn.cpu().tolist()
+        scores = result.boxes.conf.cpu().tolist()
+        classes = result.boxes.cls.cpu().tolist()
+        return [
+            Detection(tuple(box), float(score), self.class_names[int(class_id)], int(class_id))
+            for box, score, class_id in zip(boxes, scores, classes)
+        ]
