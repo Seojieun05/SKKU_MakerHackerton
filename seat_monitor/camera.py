@@ -5,10 +5,12 @@ import time
 
 
 class FrameSource:
-    def __init__(self, source: str, width: int, height: int, camera_index: int = 0):
+    def __init__(self, source: str, width: int, height: int, camera_index: int = 0,
+                 sensor_size: tuple[int, int] | None = None):
         self.source = source
         self.width, self.height = width, height
         self.camera_index = camera_index
+        self.sensor_size = sensor_size
         self.camera = self.capture = None
         self.is_video = source != "picamera2" and not source.isdecimal()
         self.video_fps = 0.0
@@ -25,10 +27,20 @@ class FrameSource:
                         "with apt and create the venv using --system-site-packages."
                     ) from exc
                 self.camera = Picamera2(self.camera_index)
+                sensor_options = {}
+                if self.sensor_size is not None:
+                    mode = next((m for m in self.camera.sensor_modes
+                                 if tuple(m['size']) == self.sensor_size), None)
+                    if mode is None:
+                        raise ValueError(f'Camera has no sensor mode {self.sensor_size}')
+                    sensor_options['sensor'] = {
+                        'output_size': self.sensor_size, 'bit_depth': mode['bit_depth'],
+                    }
                 # libcamera RGB888 yields B,G,R byte order, matching OpenCV/YOLO.
                 config = self.camera.create_video_configuration(
                     main={"size": (self.width, self.height), "format": "RGB888"},
                     controls={"FrameRate": 10}, buffer_count=2, queue=False,
+                    **sensor_options,
                 )
                 self.camera.configure(config)
                 self.camera.start()
